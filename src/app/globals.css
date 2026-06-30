@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-sand-50 text-mist-900 antialiased;
+  }
+  /* Accessibility: a visible, calm focus ring everywhere. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-harbor-400 ring-offset-2 ring-offset-sand-50;
+  }
+  h1, h2, h3 {
+    @apply tracking-tight text-harbor-900;
+  }
+}
+
+@layer components {
+  /* Reusable button styles — soft, rounded, calm. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5
+           text-sm font-semibold transition-colors focus-visible:ring-2;
+  }
+  .btn-primary {
+    @apply btn bg-harbor-500 text-white hover:bg-harbor-600;
+  }
+  .btn-secondary {
+    @apply btn border border-harbor-200 bg-white text-harbor-700 hover:bg-harbor-50;
+  }
+  .btn-gold {
+    @apply btn bg-gold-400 text-harbor-900 hover:bg-gold-500;
+  }
+  .btn-ghost {
+    @apply btn text-harbor-700 hover:bg-harbor-50;
+  }
+
+  .card {
+    @apply rounded-2xl border border-mist-200 bg-white shadow-card;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-harbor-200
+           bg-harbor-50 px-3 py-1 text-xs font-medium text-harbor-700;
+  }
+
+  .section {
+    @apply mx-auto w-full max-w-content px-5 sm:px-8;
+  }
+
+  /* Prose-ish container for long copy on policy / about pages. */
+  .calm-prose p {
+    @apply mb-4 leading-relaxed text-mist-700;
+  }
+  .calm-prose h2 {
+    @apply mb-3 mt-8 text-xl font-bold;
+  }
+  .calm-prose ul {
+    @apply mb-4 list-disc space-y-1.5 pl-5 text-mist-700;
+  }
+}
