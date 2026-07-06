@@ -1,41 +1,144 @@
 /**
- * PLACEHOLDER moderation helpers for the beta.
- *
- * These are lightweight, transparent stand-ins so the product *feels* safe and
- * the architecture is moderation-ready. None of this replaces human review.
+ * Content moderation utilities for Little Harbor.
+ * Scans posts, messages, and comments for unsafe content.
+ * Non-blocking: flags for review but allows posting (per your spec).
  */
 
-/** Patterns that suggest someone is sharing exact personal contact details. */
-const RISKY_PATTERNS: Array<{ label: string; re: RegExp }> = [
-  { label: "phone number", re: /(\+?\d[\d\s().-]{7,}\d)/ },
-  { label: "email address", re: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i },
-  { label: "street address", re: /\b\d{1,5}\s+([A-Za-z]+\s){1,3}(st|street|ave|avenue|rd|road|blvd|ln|lane|dr|drive)\b/i },
-  { label: "social handle", re: /(?:^|\s)@[A-Za-z0-9_]{3,}/ },
-];
+import { sendModerationAlert, sendSafetyNudgeEmail } from './email';
 
-export interface ContentScan {
+// Patterns for detecting potentially unsafe content
+const UNSAFE_PATTERNS = {
+  phone: /\b(\d{3}[-.]?\d{3}[-.]?\d{4}|\(\d{3}\)\s?\d{3}[-.]?\d{4})\b/g,
+  email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+  url: /(https?:\/\/[^\s]+|www\.[^\s]+)/g,
+  address: /(\d+\s+[A-Z][a-z]+\s+(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Circle|Cir|Way|Place|Pl|Parkway|Pkwy))/gi,
+  socialHandle: /@[A-Za-z0-9_]{1,15}\b/g, // Twitter/X style handles
+};
+
+export interface FlaggedContent {
   flagged: boolean;
-  reasons: string[];
+  flags: string[];
+  severity: 'low' | 'medium' | 'high';
+  snippet: string;
 }
 
 /**
- * Soft scan used to show a *gentle* content warning before someone shares
- * personal details too quickly. It never blocks — it nudges.
+ * Scan content for unsafe patterns.
+ * Returns details about what was flagged.
  */
-export function scanForPersonalDetails(text: string): ContentScan {
-  const reasons = RISKY_PATTERNS.filter((p) => p.re.test(text)).map((p) => p.label);
-  return { flagged: reasons.length > 0, reasons };
+export function scanContent(content: string, contentType: 'post' | 'message' | 'comment' = 'post'): FlaggedContent {
+  const flags: string[] = [];
+  let severity: 'low' | 'medium' | 'high' = 'low';
+
+  // Check for phone numbers
+  if (UNSAFE_PATTERNS.phone.test(content)) {
+    flags.push('phone_number');
+    severity = 'high';
+  }
+
+  // Check for email addresses
+  if (UNSAFE_PATTERNS.email.test(content)) {
+    flags.push('email_address');
+    severity = 'high';
+  }
+
+  // Check for URLs (suspicious in some contexts)
+  if (UNSAFE_PATTERNS.url.test(content)) {
+    flags.push('external_url');
+    if (severity !== 'high') severity = 'medium';
+  }
+
+  // Check for physical addresses
+  if (UNSAFE_PATTERNS.address.test(content)) {
+    flags.push('physical_address');
+    severity = 'high';
+  }
+
+  // Check for social media handles
+  if (UNSAFE_PATTERNS.socialHandle.test(content)) {
+    flags.push('social_media_handle');
+    if (severity !== 'high') severity = 'medium';
+  }
+
+  return {
+    flagged: flags.length > 0,
+    flags,
+    severity,
+    snippet: content.substring(0, 200),
+  };
 }
 
-/** PLACEHOLDER: in production this would enqueue a report for a moderator. */
-export function submitReport(input: {
-  reporterId: string;
-  targetType: string;
-  targetId: string;
-  reason: string;
-}): { ok: boolean; note: string } {
-  return {
-    ok: true,
-    note: `Report received for ${input.targetType}:${input.targetId}. A moderator will review. (Placeholder.)`,
-  };
+/**
+ * Log a moderation action to the database.
+ */
+export async function logModerationAction(
+  supabase: any,
+  targetType: 'post' | 'comment' | 'message' | 'profile',
+  targetId: string,
+  action: 'hide' | 'remove' | 'warn' | 'verify' | 'dismiss',
+  note: string,
+  moderatorId?: string
+) {
+  try {
+    const { data, error } = await supabase
+      .from('moderation_actions')
+      .insert([
+        {
+          moderator_id: moderatorId || 'system',
+          target_type: targetType,
+          target_id: targetId,
+          action,
+          note,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select();
+
+    if (error) throw error;
+    console.log('Moderation action logged:', data);
+    return data;
+  } catch (error) {
+    console.error('Failed to log moderation action:', error);
+    throw error;
+  }
+}
+
+/**
+ * Flag content for review and notify mods.
+ */
+export async function flagContentForReview(
+  supabase: any,
+  targetType: 'post' | 'comment' | 'message' | 'profile',
+  targetId: string,
+  reason: string,
+  reporterId: string,
+  contentSnippet: string
+) {
+  try {
+    // Create report record
+    const { data, error } = await supabase
+      .from('reports')
+      .insert([
+        {
+          reporter_id: reporterId,
+          target_type: targetType,
+          target_id: targetId,
+          reason,
+          created_at: new Date().toISOString(),
+          status: 'open',
+        },
+      ])
+      .select();
+
+    if (error) throw error;
+
+    // Send email alert to mods
+    await sendModerationAlert(reason, targetType, targetId, contentSnippet);
+
+    console.log('Content flagged for review:', data);
+    return data;
+  } catch (error) {
+    console.error('Failed to flag content:', error);
+    throw error;
+  }
 }
