@@ -1,52 +1,173 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { AuthForm } from "@/components/AuthForm";
-import { ImagePlaceholder } from "@/components/ImagePlaceholder";
-import { Icon } from "@/components/Icon";
-import { MedicalDisclaimer } from "@/components/Safety";
+'use client';
 
-export const metadata: Metadata = {
-  title: "Sign In / Join the Beta",
-  description: "Create a parent account or sign in to Little Harbor.",
-};
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabaseClient } from '@/lib/supabase';
+import Link from 'next/link';
+import { Icon } from '@/components/Icon';
 
 export default function AuthPage() {
-  return (
-    <div className="section grid items-center gap-12 py-12 lg:grid-cols-2 lg:py-16">
-      <div className="order-2 lg:order-1">
-        <AuthForm />
-        <div className="mt-5">
-          <MedicalDisclaimer />
-        </div>
-      </div>
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-      <div className="order-1 lg:order-2">
-        <span className="pill"><Icon name="anchor" size={14} /> Welcome aboard</span>
-        <h1 className="mt-4 text-3xl font-bold text-harbor-900 sm:text-4xl">
-          Come find your harbor.
-        </h1>
-        <p className="mt-4 leading-relaxed text-mist-700">
-          Little Harbor is a parent-first community. Creating an account lets you
-          join the forum, connect by state, and message other parents carefully.
-          The goal is to connect parents with similar peers, provide support,
-          and eventually help children form safe friendships with others who
-          understand their journey.
-          Share only what feels right — never a child&apos;s full name, your address,
-          or other identifying details.
-        </p>
-        <div className="mt-6">
-          <ImagePlaceholder
-            src="/images/welcome-harbor.png"
-            tone="sky"
-            aspect="aspect-[16/9]"
-            alt="A calm coastal scene at soft daylight, evoking welcome and safe arrival."
-          />
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      if (isSignUp) {
+        // Sign up
+        const { data: authData, error: signUpError } = await supabaseClient.auth.signUp({
+          email,
+          password,
+        });
+
+        if (signUpError) throw signUpError;
+        if (!authData.user) throw new Error('Sign up failed');
+
+        // Create profile
+        const { error: profileError } = await supabaseClient.from('profiles').insert([
+          {
+            user_id: authData.user.id,
+            display_name: displayName || email.split('@')[0],
+            avatar_url: null,
+            bio: '',
+            state_code: '',
+            role: 'parent',
+            verified_parent_status: 'unverified',
+            posts_count: 0,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (profileError) throw profileError;
+
+        setError(null);
+        router.push('/community');
+      } else {
+        // Sign in
+        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) throw signInError;
+
+        router.push('/community');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-harbor-50 to-sand-50 p-4">
+      <div className="w-full max-w-md">
+        <div className="card p-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <Link href="/" className="inline-block mb-6">
+              <Icon name="lighthouse" size={40} className="text-harbor-600" />
+            </Link>
+            <h1 className="text-2xl font-bold text-harbor-900 mb-2">
+              {isSignUp ? 'Join Little Harbor' : 'Welcome Back'}
+            </h1>
+            <p className="text-sm text-mist-600">
+              {isSignUp
+                ? 'Create your parent account to join the community'
+                : 'Sign in to your parent account'}
+            </p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleAuth} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <label className="block text-sm font-medium text-harbor-900 mb-2">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full px-4 py-2 border border-mist-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-harbor-500"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-harbor-900 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="w-full px-4 py-2 border border-mist-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-harbor-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-harbor-900 mb-2">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full px-4 py-2 border border-mist-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-harbor-500"
+              />
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full btn-primary disabled:opacity-50"
+            >
+              {loading ? 'Loading...' : isSignUp ? 'Create Account' : 'Sign In'}
+            </button>
+          </form>
+
+          {/* Toggle */}
+          <div className="mt-6 text-center text-sm text-mist-600">
+            {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+            <button
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setError(null);
+              }}
+              className="ml-1 text-harbor-600 font-semibold hover:underline"
+            >
+              {isSignUp ? 'Sign in' : 'Join now'}
+            </button>
+          </div>
+
+          {/* Back to home */}
+          <div className="mt-6 pt-6 border-t border-mist-200 text-center">
+            <Link href="/" className="text-sm text-harbor-600 hover:underline">
+              Back to home
+            </Link>
+          </div>
         </div>
-        <p className="mt-4 text-sm text-mist-500">
-          By joining you agree to our{" "}
-          <Link href="/safety#terms" className="underline underline-offset-2">community standards</Link>.
-          There are no child or teen accounts in the beta.
-        </p>
       </div>
     </div>
   );
